@@ -26,3 +26,4 @@ endmacro ()
 # Benchmarks
 
 create_benchmark (booleval)
+create_benchmark (user_case)
