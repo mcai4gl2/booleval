@@ -512,3 +512,108 @@ TEST( EvaluatorTest, UnknownField )
         ASSERT_EQ   ( result.message, "Unknown field" );
     }
 }
+
+TEST( EvaluatorTest, EmptyStringInMiddleOfExpression )
+{
+    // Test that empty string in the middle of an expression doesn't cause infinite loop
+    booleval::evaluator evaluator;
+
+    // Test case 1: Empty string with AND operator
+    // This should handle gracefully without infinite loop
+    [[maybe_unused]] auto result1 = evaluator.expression( "field eq '' and other_field bar" );
+    
+    // Test case 2: Empty string with OR operator
+    booleval::evaluator evaluator2;
+    [[maybe_unused]] auto result2 = evaluator2.expression( "field eq '' or other_field bar" );
+
+    // Test case 3: Multiple empty strings
+    booleval::evaluator evaluator3;
+    [[maybe_unused]] auto result3 = evaluator3.expression( "field eq '' and field2 eq ''" );
+
+    // Test case 4: Empty string with parentheses
+    booleval::evaluator evaluator4;
+    [[maybe_unused]] auto result4 = evaluator4.expression( "(field eq '') and (other_field bar)" );
+
+    // All these should complete without infinite loop
+    // We don't care about the result validity, just that it completes
+    SUCCEED();
+}
+
+TEST( EvaluatorTest, DataObjectEvaluationExample )
+{
+    // Example: How to use booleval with a custom data object
+    
+    // Step 1: Define your data object with getter methods
+    class Person
+    {
+    public:
+        Person(std::string name, unsigned age)
+            : name_(std::move(name)), age_(age) {}
+        
+        std::string const& name() const noexcept { return name_; }
+        unsigned age() const noexcept { return age_; }
+        
+    private:
+        std::string name_;
+        unsigned age_{0};
+    };
+    
+    // Step 2: Create an evaluator and register fields using make_field()
+    booleval::evaluator evaluator
+    {
+        {
+            booleval::make_field("name", &Person::name),
+            booleval::make_field("age", &Person::age)
+        }
+    };
+    
+    // Step 3: Set an expression to evaluate
+    // This expression matches persons named "John" who are 25 years old
+    ASSERT_TRUE(evaluator.expression("name John and age 25"));
+    ASSERT_TRUE(evaluator.is_activated());
+    
+    // Step 4: Evaluate objects against the expression
+    Person person1{"John", 25};
+    Person person2{"Jane", 25};
+    Person person3{"John", 30};
+    Person person4{"John", 25};
+    
+    // Only person1 and person4 match both conditions
+    auto result1 = evaluator.evaluate(person1);
+    ASSERT_TRUE(result1.success);
+    
+    auto result2 = evaluator.evaluate(person2);
+    ASSERT_FALSE(result2.success); // name doesn't match
+    
+    auto result3 = evaluator.evaluate(person3);
+    ASSERT_FALSE(result3.success); // age doesn't match
+    
+    auto result4 = evaluator.evaluate(person4);
+    ASSERT_TRUE(result4.success);
+    
+    // Example with different operators
+    // Match persons older than 20 or named "Jane"
+    [[maybe_unused]] auto expr_result2 = evaluator.expression("age gt 20 or name Jane");
+    
+    auto result5 = evaluator.evaluate(person1); // age 25 > 20, matches
+    ASSERT_TRUE(result5.success);
+    
+    auto result6 = evaluator.evaluate(person2); // name "Jane", matches
+    ASSERT_TRUE(result6.success);
+    
+    auto result7 = evaluator.evaluate(person3); // age 30 > 20, matches
+    ASSERT_TRUE(result7.success);
+    
+    // Example with parentheses for grouping
+    // Match persons named "John" who are under 30
+    [[maybe_unused]] auto expr_result3 = evaluator.expression("(name John and age lt 30)");
+    
+    auto result8 = evaluator.evaluate(person1); // John, 25 - matches
+    ASSERT_TRUE(result8.success);
+    
+    auto result9 = evaluator.evaluate(person3); // John, 30 - age not lt 30
+    ASSERT_FALSE(result9.success);
+    
+    auto result10 = evaluator.evaluate(person4); // John, 25 - matches
+    ASSERT_TRUE(result10.success);
+}
